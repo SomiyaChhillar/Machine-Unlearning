@@ -1,16 +1,17 @@
-import jax.numpy as np
-from jax import random
+from training import train, accuracy, predict
+from utils import delete_index, process_updates, publish, compute_constants, compute_sigma
 from tensorflow.keras.datasets import mnist
+from jax import random
+import jax.numpy as np
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from model import train, predict, accuracy
-from utils import delete_index, process_updates, compute_sigma, publish
-
 if __name__ == "__main__":
     # Load MNIST dataset
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    baseline_accuracy=[]
+    unlearning_accuracy=[]
 
     # Preprocess MNIST
     X_train = X_train.reshape(X_train.shape[0], -1) / 255.0  # Normalize and flatten
@@ -27,29 +28,31 @@ if __name__ == "__main__":
     rng = random.PRNGKey(42)
     W = random.normal(rng, shape=(num_features, num_classes))
 
-    # Hyperparameters
-    l2 = 0.01
-    learning_rate = 0.01
-    iters = 1000
-    radius = 1.0
+    l2 = 0.001
+    learning_rate = 0.1
+    radius = 5.0
 
     # Parameters for differential privacy
     num_examples = X_train.shape[0]
-    lipshitz = 1 + l2
-    strong = l2
-    smooth = 4 - l2
-    epsilon = 5
-    delta = 1 / (num_examples ** 2)
+    delta = 1 / (num_examples**2)
+    epsilon = 4.0
+    I= 500
+
+    lipschitz, smooth, strong = compute_constants(X_train, l2, epsilon, delta, radius, num_examples, I)
+
+    new_learning_rate = float(2/(smooth+ (2*strong)))
+    new_l2 = float(strong/2)
+
 
     # Compute sigma for publishing
-    sigma = compute_sigma(num_examples, iters, lipshitz, strong, epsilon, delta)
+    sigma = compute_sigma(num_examples, I, lipschitz, smooth, strong, epsilon, delta)
 
     # Train the model
-    W = train(W, X_train, y_train, num_classes, l2, 50, learning_rate, radius)
+    W = train(W, X_train, y_train, num_classes, l2, 1500, learning_rate, radius)
      # Configurable indices to delete
 
-    # Training function
-    train_fn = lambda W, X, y: train(W, X, y, num_classes, l2, 10, learning_rate, radius)
+    train_fn = lambda W, X, y:train(W, X, y, num_classes, new_l2, I, new_learning_rate, radius)
+
 
     indices_to_delete = [0, 1, 5, 10]  # Indices you want to delete from the dataset
 
@@ -60,7 +63,7 @@ if __name__ == "__main__":
     W, X_train, y_train = process_updates(W, X_train, y_train, updates, train_fn)
 
     W_retrained = random.normal(rng, shape=(num_features, num_classes))
-    W_retrained = train(W_retrained, X_train, y_train, num_classes, l2, 50, learning_rate, radius)
+    W_retrained = train(W_retrained, X_train, y_train, num_classes, l2, 1500, learning_rate, radius)
 
 
     # Add noise to weights for publishing
