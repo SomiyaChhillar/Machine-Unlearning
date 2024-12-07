@@ -1,5 +1,0 @@
-jax
-tensorflow
-scikit-learn
-matplotlib
-tqdm
